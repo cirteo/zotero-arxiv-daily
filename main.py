@@ -66,14 +66,29 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
     if not debug:
+        def fetch_papers_by_id(ids: list[str]) -> list[ArxivPaper]:
+            search = arxiv.Search(id_list=ids)
+            return [ArxivPaper(p) for p in client.results(search)]
+
         papers = []
         all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if i.arxiv_announce_type == 'new']
         bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
         for i in range(0,len(all_paper_ids),20):
-            search = arxiv.Search(id_list=all_paper_ids[i:i+20])
-            batch = [ArxivPaper(p) for p in client.results(search)]
-            bar.update(len(batch))
-            papers.extend(batch)
+            batch_ids = all_paper_ids[i:i+20]
+            try:
+                papers.extend(fetch_papers_by_id(batch_ids))
+            except Exception as batch_error:
+                logger.warning(
+                    f"Failed to retrieve a batch of {len(batch_ids)} Arxiv papers due to {batch_error}. "
+                    "Retrying one-by-one."
+                )
+                for paper_id in batch_ids:
+                    try:
+                        papers.extend(fetch_papers_by_id([paper_id]))
+                    except Exception as paper_error:
+                        logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
+            finally:
+                bar.update(len(batch_ids))
         bar.close()
 
     else:
@@ -197,4 +212,3 @@ if __name__ == '__main__':
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
-
