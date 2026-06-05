@@ -67,6 +67,10 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
     if not debug:
+        arxiv_api_errors = (arxiv.HTTPError,)
+        if hasattr(arxiv, "UnexpectedEmptyPageError"):
+            arxiv_api_errors = arxiv_api_errors + (arxiv.UnexpectedEmptyPageError,)
+
         def fetch_papers_by_id(ids: list[str]) -> list[ArxivPaper]:
             search = arxiv.Search(id_list=ids)
             return [ArxivPaper(p) for p in client.results(search)]
@@ -79,19 +83,20 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
             try:
                 papers.extend(fetch_papers_by_id(batch_ids))
                 bar.update(len(batch_ids))
-            except Exception as batch_error:
+            except arxiv_api_errors as batch_error:
                 logger.warning(
                     f"Failed to retrieve a batch of {len(batch_ids)} Arxiv papers due to {batch_error}. "
                     "Retrying one-by-one."
                 )
-                for paper_id in batch_ids:
+                for idx,paper_id in enumerate(batch_ids):
                     try:
                         single_paper = fetch_papers_by_id([paper_id])
                         if single_paper:
                             papers.append(single_paper[0])
-                    except Exception as paper_error:
+                    except arxiv_api_errors as paper_error:
                         logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
-                    time.sleep(1)
+                    if idx + 1 < len(batch_ids):
+                        time.sleep(1)
                     bar.update(1)
         bar.close()
 
