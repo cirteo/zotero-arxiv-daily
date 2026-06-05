@@ -72,6 +72,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
             arxiv_api_errors = arxiv_api_errors + (arxiv.UnexpectedEmptyPageError,)
 
         def fetch_papers_by_id(ids: list[str]) -> list[ArxivPaper]:
+            """Fetch arXiv papers by IDs via the arxiv client."""
             search = arxiv.Search(id_list=ids)
             return [ArxivPaper(p) for p in client.results(search)]
 
@@ -95,7 +96,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
                             papers.append(single_paper[0])
                     except arxiv_api_errors as paper_error:
                         logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
-                    if idx + 1 < len(batch_ids):
+                    if idx < len(batch_ids) - 1:
                         time.sleep(1)
                     bar.update(1)
         bar.close()
