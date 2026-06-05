@@ -78,6 +78,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
             batch_ids = all_paper_ids[i:i+20]
             try:
                 papers.extend(fetch_papers_by_id(batch_ids))
+                bar.update(len(batch_ids))
             except Exception as batch_error:
                 logger.warning(
                     f"Failed to retrieve a batch of {len(batch_ids)} Arxiv papers due to {batch_error}. "
@@ -85,12 +86,13 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
                 )
                 for paper_id in batch_ids:
                     try:
-                        papers.extend(fetch_papers_by_id([paper_id]))
+                        single_paper = fetch_papers_by_id([paper_id])
+                        if single_paper:
+                            papers.append(single_paper[0])
                     except Exception as paper_error:
                         logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
                     time.sleep(1)
-            finally:
-                bar.update(len(batch_ids))
+                    bar.update(1)
         bar.close()
 
     else:
