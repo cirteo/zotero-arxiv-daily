@@ -16,6 +16,7 @@ arxiv.Result._get_pdf_url = _get_pdf_url_patch
 import argparse
 import os
 import sys
+import time
 from dotenv import load_dotenv
 load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -29,6 +30,8 @@ from tempfile import mkstemp
 from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
+
+RETRY_DELAY_SECONDS = 1
 
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
@@ -66,14 +69,45 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
     if 'Feed error for query' in feed.feed.title:
         raise Exception(f"Invalid ARXIV_QUERY: {query}.")
     if not debug:
+        arxiv_api_errors = [arxiv.HTTPError]
+        if hasattr(arxiv, "UnexpectedEmptyPageError"):
+            arxiv_api_errors.append(arxiv.UnexpectedEmptyPageError)
+        arxiv_api_errors = tuple(arxiv_api_errors)
+
+        def fetch_papers_by_id(ids: list[str]) -> list[ArxivPaper]:
+            """Fetch arXiv papers by IDs via the arxiv client.
+
+            Raises:
+                arxiv.HTTPError: If the arXiv API request fails.
+                arxiv.UnexpectedEmptyPageError: If arXiv returns an empty page.
+            """
+            search = arxiv.Search(id_list=ids)
+            return [ArxivPaper(p) for p in client.results(search)]
+
         papers = []
         all_paper_ids = [i.id.removeprefix("oai:arXiv.org:") for i in feed.entries if i.arxiv_announce_type == 'new']
         bar = tqdm(total=len(all_paper_ids),desc="Retrieving Arxiv papers")
         for i in range(0,len(all_paper_ids),20):
-            search = arxiv.Search(id_list=all_paper_ids[i:i+20])
-            batch = [ArxivPaper(p) for p in client.results(search)]
-            bar.update(len(batch))
-            papers.extend(batch)
+            batch_ids = all_paper_ids[i:i+20]
+            try:
+                batch = fetch_papers_by_id(batch_ids)
+                papers.extend(batch)
+                bar.update(len(batch))
+            except arxiv_api_errors as batch_error:
+                logger.warning(
+                    f"Failed to retrieve a batch of {len(batch_ids)} Arxiv papers due to {batch_error}. "
+                    "Retrying one-by-one."
+                )
+                for idx, paper_id in enumerate(batch_ids):
+                    try:
+                        single_paper = fetch_papers_by_id([paper_id])
+                        if single_paper:
+                            papers.append(single_paper[0])
+                            bar.update(1)
+                    except arxiv_api_errors as paper_error:
+                        logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
+                    if idx < len(batch_ids) - 1:
+                        time.sleep(RETRY_DELAY_SECONDS)
         bar.close()
 
     else:
@@ -197,4 +231,3 @@ if __name__ == '__main__':
     logger.info("Sending email...")
     send_email(args.sender, args.receiver, args.sender_password, args.smtp_server, args.smtp_port, html)
     logger.success("Email sent successfully! If you don't receive the email, please check the configuration and the junk box.")
-
