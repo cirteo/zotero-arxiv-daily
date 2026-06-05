@@ -88,7 +88,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
                     f"Failed to retrieve a batch of {len(batch_ids)} Arxiv papers due to {batch_error}. "
                     "Retrying one-by-one."
                 )
-                for idx,paper_id in enumerate(batch_ids):
+                for idx, paper_id in enumerate(batch_ids):
                     try:
                         single_paper = fetch_papers_by_id([paper_id])
                         if single_paper:
