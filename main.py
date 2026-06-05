@@ -31,6 +31,8 @@ from paper import ArxivPaper
 from llm import set_global_llm
 import feedparser
 
+RETRY_DELAY_SECONDS = 1
+
 def get_zotero_corpus(id:str,key:str) -> list[dict]:
     zot = zotero.Zotero(id, 'user', key)
     collections = zot.everything(zot.collections())
@@ -72,7 +74,12 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
             arxiv_api_errors = arxiv_api_errors + (arxiv.UnexpectedEmptyPageError,)
 
         def fetch_papers_by_id(ids: list[str]) -> list[ArxivPaper]:
-            """Fetch arXiv papers by IDs via the arxiv client."""
+            """Fetch arXiv papers by IDs via the arxiv client.
+
+            Raises:
+                arxiv.HTTPError: If the arXiv API request fails.
+                arxiv.UnexpectedEmptyPageError: If arXiv returns an empty page.
+            """
             search = arxiv.Search(id_list=ids)
             return [ArxivPaper(p) for p in client.results(search)]
 
@@ -97,7 +104,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
                     except arxiv_api_errors as paper_error:
                         logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
                     if idx < len(batch_ids) - 1:
-                        time.sleep(1)
+                        time.sleep(RETRY_DELAY_SECONDS)
                     bar.update(1)
         bar.close()
 
