@@ -16,6 +16,7 @@ arxiv.Result._get_pdf_url = _get_pdf_url_patch
 import argparse
 import os
 import sys
+import time
 from dotenv import load_dotenv
 load_dotenv(override=True)
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
@@ -87,6 +88,7 @@ def get_arxiv_paper(query:str, debug:bool=False) -> list[ArxivPaper]:
                         papers.extend(fetch_papers_by_id([paper_id]))
                     except Exception as paper_error:
                         logger.warning(f"Skip Arxiv paper {paper_id} due to {paper_error}.")
+                    time.sleep(1)
             finally:
                 bar.update(len(batch_ids))
         bar.close()
