@@ -1,6 +1,7 @@
 from loguru import logger
 from pyzotero import zotero
 from omegaconf import DictConfig, ListConfig
+from omegaconf.errors import MissingMandatoryValue
 from .utils import glob_match
 from .retriever import get_retriever_cls
 from .protocol import CorpusPaper
@@ -34,8 +35,15 @@ class Executor:
         self.config = config
         self.include_path_patterns = normalize_path_patterns(config.zotero.include_path, "include_path")
         self.ignore_path_patterns = normalize_path_patterns(config.zotero.ignore_path, "ignore_path")
+        try:
+            sources = list(config.executor.source)
+        except MissingMandatoryValue:
+            logger.warning(
+                "config.executor.source is missing. Falling back to ['arxiv']."
+            )
+            sources = ["arxiv"]
         self.retrievers = {
-            source: get_retriever_cls(source)(config) for source in config.executor.source
+            source: get_retriever_cls(source)(config) for source in sources
         }
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
         self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)

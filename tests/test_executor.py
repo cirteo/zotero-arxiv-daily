@@ -3,7 +3,7 @@
 from datetime import datetime
 
 import pytest
-from omegaconf import OmegaConf
+from omegaconf import MISSING, OmegaConf
 
 from zotero_arxiv_daily.executor import Executor, normalize_path_patterns
 from zotero_arxiv_daily.protocol import CorpusPaper
@@ -141,6 +141,35 @@ def test_fetch_zotero_corpus_paper_with_zero_collections(config, monkeypatch):
 
     assert len(corpus) == 1
     assert corpus[0].paths == []
+
+
+def test_executor_uses_arxiv_when_executor_source_is_missing(config, monkeypatch):
+    from omegaconf import open_dict
+
+    calls = []
+
+    class StubRetriever:
+        def __init__(self, _config):
+            pass
+
+    class StubReranker:
+        def __init__(self, _config):
+            pass
+
+    monkeypatch.setattr(
+        "zotero_arxiv_daily.executor.get_retriever_cls",
+        lambda source: calls.append(source) or StubRetriever,
+    )
+    monkeypatch.setattr("zotero_arxiv_daily.executor.get_reranker_cls", lambda _name: StubReranker)
+    monkeypatch.setattr("zotero_arxiv_daily.executor.OpenAI", lambda **_kwargs: object())
+
+    with open_dict(config):
+        config.executor.source = MISSING
+
+    executor = Executor(config)
+
+    assert calls == ["arxiv"]
+    assert list(executor.retrievers.keys()) == ["arxiv"]
 
 
 # ---------------------------------------------------------------------------
