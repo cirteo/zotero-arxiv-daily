@@ -1,6 +1,6 @@
 from loguru import logger
 from pyzotero import zotero
-from omegaconf import DictConfig, ListConfig
+from omegaconf import DictConfig, ListConfig, OmegaConf
 from .utils import glob_match
 from .retriever import get_retriever_cls
 from .protocol import CorpusPaper
@@ -29,13 +29,45 @@ def normalize_path_patterns(patterns: list[str] | ListConfig | None, config_key:
     return list(patterns)
 
 
+def resolve_executor_sources(config: DictConfig) -> list[str]:
+    configured_sources = OmegaConf.select(config, "executor.source", default=None, throw_on_missing=False)
+    if configured_sources is not None:
+        if not isinstance(configured_sources, (list, ListConfig)):
+            raise TypeError(
+                "config.executor.source must be a list of source names, "
+                'for example ["arxiv", "biorxiv"].'
+            )
+        if any(not isinstance(source, str) for source in configured_sources):
+            raise TypeError("config.executor.source must contain only source name strings.")
+        return list(configured_sources)
+
+    source_config = OmegaConf.select(config, "source", default=None)
+    inferred_sources = [
+        source_name
+        for source_name, source_settings in (source_config or {}).items()
+        if source_settings is not None and source_settings.get("category") is not None
+    ]
+    if inferred_sources:
+        logger.warning(
+            "config.executor.source is missing. "
+            f"Inferring sources from config.source with non-empty category: {inferred_sources}"
+        )
+        return inferred_sources
+
+    raise ValueError(
+        "config.executor.source is missing and could not be inferred. "
+        "Please set executor.source, e.g. ['arxiv']."
+    )
+
+
 class Executor:
     def __init__(self, config:DictConfig):
         self.config = config
         self.include_path_patterns = normalize_path_patterns(config.zotero.include_path, "include_path")
         self.ignore_path_patterns = normalize_path_patterns(config.zotero.ignore_path, "ignore_path")
+        sources = resolve_executor_sources(config)
         self.retrievers = {
-            source: get_retriever_cls(source)(config) for source in config.executor.source
+            source: get_retriever_cls(source)(config) for source in sources
         }
         self.reranker = get_reranker_cls(config.executor.reranker)(config)
         self.openai_client = OpenAI(api_key=config.llm.api.key, base_url=config.llm.api.base_url)

@@ -5,7 +5,7 @@ from datetime import datetime
 import pytest
 from omegaconf import OmegaConf
 
-from zotero_arxiv_daily.executor import Executor, normalize_path_patterns
+from zotero_arxiv_daily.executor import Executor, normalize_path_patterns, resolve_executor_sources
 from zotero_arxiv_daily.protocol import CorpusPaper
 
 
@@ -43,6 +43,47 @@ def test_normalize_path_patterns_accepts_empty_list():
 
 def test_normalize_path_patterns_accepts_none():
     assert normalize_path_patterns(None, "include_path") is None
+
+
+def test_resolve_executor_sources_uses_explicit_executor_source():
+    config = OmegaConf.create(
+        {
+            "executor": {"source": ["arxiv", "biorxiv"]},
+            "source": {
+                "arxiv": {"category": ["cs.AI"]},
+                "biorxiv": {"category": ["biochemistry"]},
+            },
+        }
+    )
+    assert resolve_executor_sources(config) == ["arxiv", "biorxiv"]
+
+
+def test_resolve_executor_sources_infers_from_source_category_when_missing():
+    config = OmegaConf.create(
+        {
+            "executor": {},
+            "source": {
+                "arxiv": {"category": ["cs.AI"]},
+                "biorxiv": {"category": None},
+                "medrxiv": {"category": ["neurology"]},
+            },
+        }
+    )
+    assert resolve_executor_sources(config) == ["arxiv", "medrxiv"]
+
+
+def test_resolve_executor_sources_raises_when_missing_and_not_inferable():
+    config = OmegaConf.create(
+        {
+            "executor": {},
+            "source": {
+                "arxiv": {"category": None},
+                "biorxiv": {"category": None},
+            },
+        }
+    )
+    with pytest.raises(ValueError, match="config.executor.source is missing and could not be inferred"):
+        resolve_executor_sources(config)
 
 
 # ---------------------------------------------------------------------------
